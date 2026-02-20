@@ -1,0 +1,9 @@
+# Ignorar el entorno virtual de Python
+venv/
+__pycache__/
+
+# Ignorar el archivo de variables de entorno locales
+.env
+
+# Archivos de sistema operativo
+.DS_Store

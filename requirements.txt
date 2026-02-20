@@ -2,3 +2,4 @@ Flask
 supabase
 gunicorn
 python-dotenv
+Flask-CORS
