@@ -73,7 +73,10 @@ def get_token():
             "password": password
         })
 
-        return jsonify(session.dict()), 200
+        return jsonify({
+            "access_token": session.session.access_token,
+            "token_type": "bearer"
+        }), 200
 
     except Exception as e:
         print(f"Error al iniciar sesión: {e}")
@@ -99,14 +102,12 @@ def create_publication():
 
         # 2. Leer el body de la petición
         data = request.get_json()
-        required_fields = ['title', 'content', 'language', 'publish_period']
+        required_fields = ['title', 'content', 'language']
         if not all(field in data for field in required_fields):
             return jsonify({"error": f"Faltan campos requeridos: {required_fields}"}), 400
 
-        # 3. Calcular expires_at según el período elegido
-        period_days = {'day': 1, 'week': 7, 'month': 30}
-        days = period_days.get(data['publish_period'], 1)
-        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+        # 3. expires_at fijo: 30 días desde la publicación
+        expires_at = datetime.now(timezone.utc) + timedelta(days=30)
 
         # 4. Generar pub_code único en el backend
         pub_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -118,7 +119,6 @@ def create_publication():
             'title': data['title'],
             'content': data['content'],
             'language': data['language'],
-            'publish_period': data['publish_period'],
             'pub_code': pub_code,
             'cover_image': data.get('cover_image'),
             'style': data.get('style'),
@@ -136,23 +136,10 @@ def create_publication():
 
 @app.route('/publications/<language>', methods=['GET'])
 def get_publications_by_language(language):
-    """Obtiene las publicaciones de un salón (idioma)."""
+    """Obtiene las publicaciones activas de un salón. Endpoint público."""
     try:
-        # 1. Validar que el usuario esté autenticado
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({"error": "Token no proporcionado o en formato incorrecto."}), 401
-        
-        jwt = auth_header.split(' ')[1]
-        user_session = supabase.auth.get_user(jwt)
-        if not user_session or not user_session.user:
-            return jsonify({"error": "Token inválido o expirado."}), 401
-
-        # 2. Consultar Supabase
         now = datetime.now(timezone.utc).isoformat()
         result, count = supabase.table('publications').select('*').eq('language', language).gt('expires_at', now).order('created_at', desc=True).execute()
-
-        # 3. Retornar lista de publicaciones
         return jsonify(result[1]), 200
 
     except Exception as e:
