@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify # Se elimina render_template
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from flask_cors import CORS
+from datetime import datetime, timedelta, timezone
 
 # Carga las variables de entorno desde un archivo .env si existe (para desarrollo local)
 load_dotenv()
@@ -75,6 +76,110 @@ def get_token():
     except Exception as e:
         print(f"Error al iniciar sesión: {e}")
         return jsonify({"error": "Email o contraseña incorrectos."}), 401
+
+# --- Endpoints de la API de Publicaciones ---
+
+@app.route('/publications', methods=['POST'])
+def create_publication():
+    """Crea una nueva publicación."""
+    try:
+        # 1. Leer el token y validar usuario
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({"error": "Token no proporcionado o en formato incorrecto."}), 401
+        
+        jwt = auth_header.split(' ')[1]
+        user_session = supabase.auth.get_user(jwt)
+        if not user_session or not user_session.user:
+            return jsonify({"error": "Token inválido o expirado."}), 401
+        
+        user = user_session.user
+
+        # 2. Leer el body de la petición
+        data = request.get_json()
+        required_fields = ['title', 'content', 'language', 'publish_period', 'pub_code']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": f"Faltan campos requeridos: {required_fields}"}), 400
+
+        # 3. Calcular expires_at
+        expires_at = datetime.now(timezone.utc) + timedelta(days=28)
+
+        # 4. Preparar e insertar en Supabase
+        new_publication = {
+            'user_id': user.id,
+            'user_email': user.email,
+            'title': data['title'],
+            'content': data['content'],
+            'language': data['language'],
+            'publish_period': data['publish_period'],
+            'pub_code': data['pub_code'],
+            'cover_image': data.get('cover_image'), # Opcional
+            'style': data.get('style'),             # Opcional
+            'expires_at': expires_at.isoformat()
+        }
+
+        result, count = supabase.table('publications').insert(new_publication).execute()
+
+        # 5. Retornar el objeto insertado
+        return jsonify(result[1][0]), 201
+
+    except Exception as e:
+        print(f"Error al crear publicación: {e}")
+        return jsonify({"error": "Error interno del servidor al crear la publicación."}), 500
+
+@app.route('/publications/<language>', methods=['GET'])
+def get_publications_by_language(language):
+    """Obtiene las publicaciones de un salón (idioma)."""
+    try:
+        # 1. Validar que el usuario esté autenticado
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({"error": "Token no proporcionado o en formato incorrecto."}), 401
+        
+        jwt = auth_header.split(' ')[1]
+        user_session = supabase.auth.get_user(jwt)
+        if not user_session or not user_session.user:
+            return jsonify({"error": "Token inválido o expirado."}), 401
+
+        # 2. Consultar Supabase
+        now = datetime.now(timezone.utc).isoformat()
+        result, count = supabase.table('publications').select('*').eq('language', language).gt('expires_at', now).order('created_at', desc=True).execute()
+
+        # 3. Retornar lista de publicaciones
+        return jsonify(result[1]), 200
+
+    except Exception as e:
+        print(f"Error al leer publicaciones: {e}")
+        return jsonify({"error": "Error interno del servidor al leer las publicaciones."}), 500
+
+@app.route('/publications/<publication_id>', methods=['DELETE'])
+def delete_publication(publication_id):
+    """Elimina una publicación."""
+    try:
+        # 1. Validar usuario
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({"error": "Token no proporcionado o en formato incorrecto."}), 401
+        
+        jwt = auth_header.split(' ')[1]
+        user_session = supabase.auth.get_user(jwt)
+        if not user_session or not user_session.user:
+            return jsonify({"error": "Token inválido o expirado."}), 401
+
+        # 2. Intentar eliminar de Supabase
+        # La Política de Seguridad (RLS) se encarga de verificar que el usuario sea el dueño.
+        result, count = supabase.table('publications').delete().eq('id', publication_id).execute()
+        
+        # data, count
+        if len(result[1]) == 0:
+             return jsonify({"error": "Publicación no encontrada o no tienes permiso para eliminarla."}), 404
+
+        # 3. Retornar éxito
+        return jsonify({"message": f"Publicación {publication_id} eliminada con éxito."}), 200
+
+    except Exception as e:
+        print(f"Error al eliminar publicación: {e}")
+        return jsonify({"error": "Error interno del servidor al eliminar la publicación."}), 500
 
 # --- Arranque del Servidor ---
 
