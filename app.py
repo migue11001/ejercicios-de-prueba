@@ -1,5 +1,7 @@
 import os
-from flask import Flask, request, jsonify # Se elimina render_template
+import random
+import string
+from flask import Flask, request, jsonify
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from flask_cors import CORS
@@ -97,14 +99,19 @@ def create_publication():
 
         # 2. Leer el body de la petición
         data = request.get_json()
-        required_fields = ['title', 'content', 'language', 'publish_period', 'pub_code']
+        required_fields = ['title', 'content', 'language', 'publish_period']
         if not all(field in data for field in required_fields):
             return jsonify({"error": f"Faltan campos requeridos: {required_fields}"}), 400
 
-        # 3. Calcular expires_at
-        expires_at = datetime.now(timezone.utc) + timedelta(days=28)
+        # 3. Calcular expires_at según el período elegido
+        period_days = {'day': 1, 'week': 7, 'month': 30}
+        days = period_days.get(data['publish_period'], 1)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
 
-        # 4. Preparar e insertar en Supabase
+        # 4. Generar pub_code único en el backend
+        pub_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+        # 5. Preparar e insertar en Supabase
         new_publication = {
             'user_id': user.id,
             'user_email': user.email,
@@ -112,9 +119,9 @@ def create_publication():
             'content': data['content'],
             'language': data['language'],
             'publish_period': data['publish_period'],
-            'pub_code': data['pub_code'],
-            'cover_image': data.get('cover_image'), # Opcional
-            'style': data.get('style'),             # Opcional
+            'pub_code': pub_code,
+            'cover_image': data.get('cover_image'),
+            'style': data.get('style'),
             'expires_at': expires_at.isoformat()
         }
 
