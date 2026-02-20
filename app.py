@@ -23,40 +23,68 @@ supabase: Client = create_client(url, key)
 # --- Rutas de la Aplicación ---
 
 @app.route('/')
-def index():
-    """Sirve el archivo principal del frontend."""
+def page_register():
+    """Sirve la página de registro."""
     return render_template('index.html')
+
+@app.route('/login')
+def page_login():
+    """Sirve la página de inicio de sesión."""
+    return render_template('login.html')
 
 @app.route('/register', methods=['POST'])
 def register_user():
-    """API endpoint para registrar un nuevo usuario."""
+    """API endpoint para registrar un nuevo usuario usando Supabase Auth."""
     try:
-        # Obtiene los datos del cuerpo de la solicitud (JSON)
         data = request.get_json()
         if not data or not data.get('email') or not data.get('password'):
             return jsonify({"error": "Email y contraseña son requeridos."}), 400
 
         email = data.get('email')
-        password = data.get('password') # En un caso real, hashear la contraseña
+        password = data.get('password')
 
-        # Inserta el nuevo usuario en la tabla 'users' de Supabase
-        # La tabla debe llamarse 'users'
-        user_data, count = supabase.table('users').insert({
-            'email': email,
-            'password': password # NO HACER ESTO EN PRODUCCIÓN REAL
-        }).execute()
+        # Usa el método de autenticación de Supabase para registrar al usuario.
+        # Esto crea el usuario en la tabla 'auth.users' y nuestro trigger se encarga del perfil.
+        session = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+        })
 
-        # user_data[1] contiene la lista de registros insertados
-        if user_data[1]:
-            return jsonify({"message": f"Usuario {user_data[1][0]['email']} registrado con éxito!"}), 201
+        # Supabase puede requerir confirmación por email dependiendo de tu configuración
+        if session.user:
+            return jsonify({"message": f"Usuario {session.user.email} registrado. Revisa tu email para confirmar la cuenta."}), 201
         else:
-            # Esto puede ocurrir si hay un error en la inserción que no lanza una excepción
-            return jsonify({"error": "No se pudo registrar el usuario."}), 500
+            return jsonify({"error": "No se pudo registrar el usuario. Puede que ya exista."}), 500
 
     except Exception as e:
-        # Captura cualquier otro error (ej. violación de constraint, problema de red)
         print(f"Error al registrar: {e}")
-        return jsonify({"error": f"Error interno del servidor: {str(e)}"}), 500
+        # El objeto de error de Supabase a menudo está en e.args[0]
+        error_message = str(e.args[0]) if e.args else str(e)
+        return jsonify({"error": error_message}), 500
+
+@app.route('/token', methods=['POST'])
+def get_token():
+    """API endpoint para iniciar sesión y obtener un token de sesión."""
+    try:
+        data = request.get_json()
+        if not data or not data.get('email') or not data.get('password'):
+            return jsonify({"error": "Email y contraseña son requeridos."}), 400
+
+        email = data.get('email')
+        password = data.get('password')
+
+        # Usa el método de autenticación de Supabase para iniciar sesión.
+        session = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+
+        # Si el login es exitoso, la sesión contiene el access_token (JWT) y datos del usuario.
+        return jsonify(session.dict()), 200
+
+    except Exception as e:
+        print(f"Error al iniciar sesión: {e}")
+        return jsonify({"error": "Email o contraseña incorrectos."}), 401
 
 # --- Arranque del Servidor ---
 
