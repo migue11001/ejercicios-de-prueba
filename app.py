@@ -115,14 +115,12 @@ def create_publication():
         # 5. Preparar e insertar en Supabase
         new_publication = {
             'user_id': user.id,
-            'user_email': user.email,
             'title': data['title'],
             'content': data['content'],
             'language': data['language'],
             'pub_code': pub_code,
             'cover_image': data.get('cover_image'),
             'style': data.get('style'),
-            'expires_at': expires_at.isoformat()
         }
 
         result, count = supabase.table('publications').insert(new_publication).execute()
